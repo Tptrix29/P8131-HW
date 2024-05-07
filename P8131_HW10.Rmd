@@ -1,0 +1,108 @@
+---
+title: "P8131_HW10"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F)
+```
+
+```{r lib-import}
+library(tidyverse)
+library(KMsurv)
+library(survival)
+library(survminer)
+```
+
+# Problem 1
+```{r 1-data}
+data1 = tibble(
+  time = c(4, 12, 15, 21, 23, 2, 6, 8, 10, 19),
+  cens = c(1, 0, 1, 0, 1, 1, 0, 0, 1, 1), 
+  group = c(rep(1, 5), rep(2, 5)) |> factor()
+)
+ggsurvplot(survfit(Surv(time, cens) ~ group, data = data1), 
+           data = data1, pval = TRUE, conf.int = TRUE,
+           palette = c("tomato", "steelblue"),
+           xlab = "Time", ylab = "Survival probability")
+```
+
+```{r 1-logrank}
+survdiff(Surv(time, cens) ~ group, data = data1)
+```
+
+**Interpretation: **
+Since the p-value is higher than 0.05, it means that we didn't find a strong enough difference between the two groups. So we can't reject the $H_0$ in 0.05 significant level. 
+
+
+# Problem 2
+```{r 2-survplot}
+data("kidtran")
+
+# male
+ggsurvplot(survfit(Surv(time, delta) ~ race, data = subset(kidtran, gender == 1)), 
+           pval = TRUE, conf.int = TRUE,
+           palette = c("tomato", "steelblue"),
+           xlab = "Time", ylab = "Survival probability", 
+           legend.title = "Race",
+           legend.labs = c("White", "Black"),
+           title = "Male")
+
+# female
+ggsurvplot(survfit(Surv(time, delta) ~ race, data = subset(kidtran, gender == 2)), 
+           pval = TRUE, conf.int = TRUE,
+           palette = c("limegreen", "orange"),
+           xlab = "Time", ylab = "Survival probability", 
+           legend.title = "Race",
+           legend.labs = c("White", "Black"),
+           title = "Female")
+```
+```{r 2-logrank-male}
+survdiff(Surv(time, delta) ~ race, data = subset(kidtran, gender == 1))
+```
+
+
+```{r 2-logrank-female}
+survdiff(Surv(time, delta) ~ race, data = subset(kidtran, gender == 2))
+```
+**Interpretation: **
+
+- For male group, the p-value is higher than 0.05, suggesting that there is no significant difference in survival times between the two races for the male group in 0.05 significance level. 
+
+- For female group, the p-value is less than 0.05, suggesting that there is significant difference in survival times between the two races for the female group in 0.05 significance level.
+
+
+# Problem 3
+```{r 3-ph}
+data("larynx")
+larynx = larynx |> 
+  mutate(z1 = (stage == 2) |> as.integer() |> factor(),
+         z2 = (stage == 3) |> as.integer() |> factor(),
+         z3 = (stage == 4) |> as.integer() |> factor())
+ph_model = coxph(Surv(time, delta) ~ z1 + z2 + z3 + age + z1 : age, data = larynx, ties = "breslow")
+beta = coef(ph_model)
+ph_model
+```
+
+**Interpretation: **
+
+- `Z1`: With fixed age and specific time point, the log hazard ratio will change `r beta[1]` for patient in stage II comparing to that in stage I, and the effect is statistically significant (p < 0.05).
+
+- `Z2`: With fixed age and specific time point, the log hazard ratio will change `r beta[2]` for patient in stage III comparing to that in stage I, and the effect is not statistically significant (p > 0.05).
+
+- `Z3`: With fixed age and specific time point, the log hazard ratio will change `r beta[3]` for patient in stage VI comparing to that in stage I, and the effect is statistically significant (p < 0.05).
+
+- `age`: With specific time point, the log hazard ratio will change `r beta[4]` with one unit change in age, and the effect is not statistically significant (p > 0.05).
+
+- `Z1:age`: With specific time point, the log hazard ratio of patient in stage II will change `r beta[5]`  with one unit change in age, and the effect is statistically significant (p < 0.05).
+
+
+The overall model test (likelihood ratio test) is statistically significant (p < 0.001), indicating that the model as a whole is a significant improvement over the null model (a model with no predictors).
+
+The model is:
+\(h(t) = h_0(t) \exp(\beta_1 z_1 + \beta_2 z_2 + \beta_3 z_3 + \beta_4 \text{age} + \beta_5 z_1 \times \text{age})\)
+
+
+The relative risk of dying for a stage II patient of age 50 as compared to a stage I patient of the same age is \(e^{\beta_1 + 50 * \beta_5}\)  = `r exp(beta[1] + 50 * beta[5])`.

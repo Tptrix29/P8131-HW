@@ -1,0 +1,152 @@
+---
+title: "P8131_HW4"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r lib-import, message=FALSE, include=FALSE}
+library(tidyverse)
+library(nnet)
+```
+
+```{r data}
+resp_low = c(65, 34, 130, 141, 67, 130)
+resp_medium = c(54, 47, 76, 116, 48, 105)
+resp_high = c(100, 100, 111, 191, 62, 104)
+data = tibble(
+  resp_low, 
+  resp_medium,
+  resp_high,
+  contact_level = rep(c('low', 'high'), 3) |> factor(levels = c("high", "low")),
+  housing_type = c(rep("tower_block", 2), rep("apartment", 2), rep("house", 2)) |> factor()
+) 
+long_data = data |> 
+  pivot_longer(cols = c(resp_low, resp_medium, resp_high), names_to = "satisfication", values_to = "resp", names_prefix = "resp_") |>
+  mutate(satisfication = factor(satisfication, levels = c("low", "medium", "high")))
+```
+## Data Summary
+```{r summary1}
+long_data |> 
+  group_by(contact_level, satisfication) |>
+  summarize(count = sum(resp), .groups = "drop_last") |>
+  pivot_wider(names_prefix = "contact_", values_from = count, names_from = contact_level) |> 
+  mutate(contact_high = contact_high / sum(contact_high) * 100, 
+         contact_low = contact_low / sum(contact_low) * 100) |>
+  knitr::kable(digits = 3)
+```
+From the above table, we could see that the residents with high satisfication level are the majority among that with high contact level. While the residents with low or high satisfication level are majority among that with low contact level. 
+
+
+
+```{r summary2}
+long_data |> 
+  group_by(housing_type, satisfication) |>
+  summarize(count = sum(resp), .groups = "drop_last") |>
+  pivot_wider(values_from = count, names_from = housing_type) |> 
+  mutate(apartment = apartment / sum(apartment) * 100,
+         house = house / sum(house) * 100,
+         tower_block = tower_block / sum(tower_block) * 100) |>
+  knitr::kable(digits = 3)
+```
+From the above table, we could see that the residents with high satisfication level are the majority among that living in tower block. While the residents with low or high satisfication level are majority among that living in apartment. In approximate, the residents living in different house types are evenly distributed in 3 levels of satisfication.
+
+
+## Multinomial Logistic Model
+```{r model}
+model1 = multinom(
+  cbind(resp_low, resp_medium, resp_high) ~ housing_type + contact_level, data = data)
+coef1 = coef(model1)
+model1 |> broom::tidy() |> knitr::kable(digits = 3)
+```
+
+The log odds ratio of medium v.s. low satisfication between low and high level of contact is `coef1[1, 4]`. The log odds ratio of medium v.s. low satisfication between tower block and apartment of house type is `r coef1[1, 3]`, while log odds ratio of medium v.s. low satisfication between house and apartment of house type is `r coef1[1, 2]`.  
+
+The log odds ratio of high v.s. low satisfication between low and high level of contact is `coef1[2, 4]`. The log odds ratio of high v.s. low satisfication between tower block and apartment of house type is `r coef1[2, 3]`, while log odds ratio of high v.s. low satisfication between house and apartment of house type is `r coef1[2, 2]`. 
+```{r ci}
+model1 |> 
+  confint(levels = 0.95) 
+```
+
+The confidence interval in 95% significance level is showed in the above output results.
+```{r goodness}
+goodness_analysis = function(model){
+  pihat = predict(model, type='probs') 
+  resp_df = data[1:3]
+  m = rowSums(resp_df)
+  res.pearson = (resp_df - pihat * m) / sqrt(pihat * m) # pearson residuals
+  # Generalized Person Stats
+  G.stat = sum(res.pearson ^ 2) 
+  n = dim(data)[1]
+  p = 4
+  j = 3
+  pval = 1 - pchisq(G.stat, df = (n - p) * (j - 1)) # fit is good, do not reject the model
+  # deviance
+  D.stat = sum(2 * resp_df * log(resp_df / (m * pihat)))
+  
+  tibble(
+    person_stats = G.stat,
+    deviance = D.stat,
+    p_value = pval
+  )
+}
+
+stats = goodness_analysis(model1)
+stats |> knitr::kable(digits = 3)
+```
+
+From the goodness-of-fitting, we have `r stats |> pull(p_value)` > 0.05 ,which means fit is good in 95% confidence level.
+
+
+```{r interaction}
+model2 = multinom(
+  cbind(resp_low, resp_medium, resp_high) ~ contact_level + housing_type + contact_level * housing_type, data = data)
+model2 |> broom::tidy() |> knitr::kable(digits = 3)
+```
+```{r dev-analysis}
+resp_part = data |> 
+  select(resp_low, resp_medium, resp_high)
+
+m = rowSums(resp_part)
+pihat1 = predict(model1, data, type = "probs")
+G1 = sum((resp_part - pihat1 * m) ^ 2 / (pihat1 * m))
+dev1 = sum(2 * resp_part * log(resp_part / (m * pihat1)))
+
+pihat2 = predict(model2, data, type = "probs")
+G2 = sum((resp_part - pihat2 * m) ^ 2 / (pihat2 * m))
+dev2 = sum(2 * resp_part * log(resp_part / (m * pihat2)))
+
+pval = 1 - pchisq(dev1 - dev2, df = 4)
+pval
+```
+From the deviance analysis with `r pval` > 0.05, we could conclude that there in no significant difference between model with interaction and that without interaction in 0.05 significance level. So there is no interaction of contact level by house type.
+
+## Proportional Odds Model
+```{r polr}
+model3 = MASS::polr(
+  satisfication ~ contact_level + housing_type,
+  data = long_data, weights = resp)
+coef3 = coef(model3)
+model3 |> summary()
+```
+The log odds ratio between low and high contact level is `r coef3[1]`.
+The log odds ratio between house and apartment of house type is `r coef3[2]`, while the log odds ratio between tower block and apartment of house type is `r coef3[3]`. 
+
+## Proportional Odds Model Inference
+```{r polr-inference}
+pihat = predict(model3, data, type = 'prob')
+res.pearson = (resp_part - pihat * m) / sqrt(pihat * m)
+G3 = sum(res.pearson ^ 2)
+cbind(data |> select(contact_level, housing_type), res.pearson) |> knitr::kable(digits = 3)
+```
+
+```{r max}
+max_res = max(abs(res.pearson))
+max_res
+```
+From the above result, the maximum absolute pearson residual is `r max_res`, and its corresponding condition is high contact leval and house as house type.

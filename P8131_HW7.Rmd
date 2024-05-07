@@ -1,0 +1,131 @@
+---
+title: "P8131_HW7"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F)
+```
+
+```{r lib-import}
+library(tidyverse)
+library(nlme)
+library(lme4)
+```
+
+### (a)
+```{r data}
+data = read.csv("data/HW7-politeness_data.csv") |>
+  janitor::clean_names() |>
+  mutate(gender = gender |> factor(),
+         scenario = scenario |> factor(),
+         attitude = attitude |> factor())
+```
+
+```{r EDA1}
+data |> 
+  ggplot(aes(y = frequency, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Boxplot of pitch for different gender"
+  ) + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+The pitch of female is significantly greater than that of male.
+
+```{r EDA2}
+data |> 
+  ggplot(aes(y = frequency, fill = attitude)) +
+  geom_boxplot() +
+  labs(
+    title = "Boxplot of pitch for different attitude"
+  ) + 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+There lies slight difference of pitch between pitch of population with different attitude. Population with 'inf' attitude tends to have higher pitch.
+
+
+
+### (b)
+
+```{r model1}
+LMM1 = lme(frequency ~ gender + attitude, random = ~1 | subject,  data = data, method='REML')
+summary(LMM1)
+# covariance estimates for random effects
+VarCorr(LMM1) 
+# covariance for fixed effects 
+vcov(LMM1) 
+# BLUP
+random.effects(LMM1) 
+# residuals
+data$frequency-fitted(LMM1) 
+```
+Given the above result, we could calculate the elements in the covariance matrix for subject \(Y_i\): 
+
+Var(\(Y_{ij}\)) = Var(\(b_i + \epsilon_{ij}\)) = \(\sigma_{b}^2 + \sigma^2 = 598.1953 + 847.7049 = 1445.9\)
+
+Cov(\(Y_{ij}, Y_{ik}\)) = Cov(\(b_i + \epsilon_{ij}, b_i + \epsilon_{ik}\)) = Cov(\(b_i, b_i\)) = \(\sigma_b^2 = 598.1953\)
+
+So the covariance matrix is:
+$$
+\text{Cov}(Y_i) = \begin{pmatrix}
+\sigma_b^2+\sigma^2 & \sigma_b^2 & \cdots & \sigma_b^2\\
+\sigma_b^2 & \sigma_b^2+\sigma^2 & \cdots & \sigma_b^2\\
+\vdots & \vdots & \ddots & \vdots\\
+\sigma_b^2 & \cdots & \sigma_b^2 & \sigma_b^2+\sigma^2\\
+\end{pmatrix} = \begin{pmatrix}
+1445.9 & 598.1953 & \cdots & 598.1953\\
+598.1953 & 1445.9 & \cdots & 598.1953\\
+\vdots & \vdots & \ddots & \vdots\\
+598.1953 & \cdots & 598.19532 & 1445.9
+\end{pmatrix}
+$$
+### (c)
+```{r model2}
+LMM2_1 = lme(frequency ~ gender + attitude, random = ~1 | subject, data = data, method='ML')
+summary(LMM2_1)
+LMM2_2 = lme(frequency ~ gender + attitude + gender * attitude, random = ~1 | subject, data = data, method='ML')
+summary(LMM2_2)
+anova(LMM2_1, LMM2_2)
+```
+Given p-value = 0.2392 > 0.05, the null hypothesis couldn't be rejected, which means the interaction term isn't significantly associated with the pitch in 0.05 significant level.
+
+### (d)
+```{r model3}
+LMM3 = lmer(frequency ~ gender + attitude + (1 | subject) + (1 | scenario),  data = data)
+summary(LMM3)
+# covariance matrix for subject Y_i
+VarCorr(LMM3)
+```
+Given the above result, we could calculate the elements in the covariance matrix for subject \(Y_i\): 
+
+\(\sigma^2_a = 14.983^2 = 224.4903\)
+
+\(\sigma^2_b = 24.783^2 = 614.1971\)
+
+\(\sigma^2 = 25.254^2 = 637.7645\)
+
+Var(\(Y_{ij}\)) = \(\sigma_{b}^2 + \sigma_{a}^2 + \sigma^2 = 1476.452\)
+
+Cov(\(Y_{ij}, Y_{ik}\)) =  \(\sigma_b^2 + \sigma_a^2 = 838.6874\)
+
+So the covariance matrix is:
+$$
+\text{Cov}(Y_i) = \begin{pmatrix}
+\sigma_{a}^2 + \sigma_b^2+\sigma^2 & \sigma_{a}^2 + \sigma_b^2 & \cdots & \sigma_{a}^2 + \sigma_b^2\\
+\sigma_{a}^2 + \sigma_b^2 & \sigma_{a}^2 + \sigma_b^2+\sigma^2 & \cdots & \sigma_{a}^2 + \sigma_b^2\\
+\vdots & \vdots & \ddots & \vdots\\
+\sigma_{a}^2 + \sigma_b^2 & \cdots & \sigma_{a}^2 + \sigma_b^2 & \sigma_{a}^2 + \sigma_b^2+\sigma^2\\
+\end{pmatrix} = \begin{pmatrix}
+1476.452 & 838.6874 & \cdots & 838.6874\\
+838.6874 & 1476.452 & \cdots & 838.6874\\
+\vdots & \vdots & \ddots & \vdots\\
+838.6874 & \cdots & 838.68742 & 1476.452
+\end{pmatrix}
+$$
+
+The coefficient for the fixed effect term attitude represents the expected change in the response variable for a one-unit change in attitude, holding all other variables constant. 

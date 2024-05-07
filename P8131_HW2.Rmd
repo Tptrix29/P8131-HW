@@ -1,0 +1,163 @@
+---
+title: "P8131_HW2"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r lib-import, message=FALSE, include=FALSE}
+library(tidyverse)
+```
+
+1. The table below gives the data collected from a bioassay study in which X variable (treated as continuous variable) is the concentration level. At each of five different dose levels (0-4), 30 animals are tested and the number of dying are recorded.
+```{r data-1}
+X = 0:4
+dying = c(2, 8, 15, 23, 27)
+n = 30
+data1 = tibble(
+  dose = X, 
+  resp = cbind(dying, n-dying)
+)
+data1 |> knitr::kable()
+```
+    Fit the model $g(P(dying)) = \alpha+\beta X$, with logit, probit, and complementary log-log links.
+
+
+  (a) Fill out the table and give comments.
+    
+```{r 1-inference}
+inference_analysis = function(model, a = 0.05){
+  beta = coef(model)[2]
+  se = sqrt(vcov(model)[2,2])
+  ci = beta + c(qnorm(a/2), -qnorm(a/2))*se
+  tibble(
+    estimation = beta,
+    lower_ci = ci[1],
+    upper_ci = ci[2], 
+    deviance = sum(residuals(model, type="deviance")^2)
+  )
+}
+```
+
+```{r 1-a}
+fitting = tibble(
+  name = c("logit", "probit", "cloglog"),
+  model = map(name, \(x) glm(resp ~ dose, family = binomial(link = x), data = data1)), 
+  infer = map(model, \(x) inference_analysis(x)),
+  pred = map(model, \(x) predict(x, newdata = tibble(dose = 0.01), type = "response")) 
+) |> unnest(c(infer, pred))
+
+fitting |> 
+  select(-model)  |> knitr::kable(digits = 4)
+```
+  **Comments: ** For coefficient estimation and CI inference, the probit and cloglog model have similar result. For deviance analysis, the logit and probit model have similar result, indicating that they have better goodness of fitting. The similar prediction result of logit and probit model also indicate they are more reliable.
+    
+  (b) Suppose that the dose level is in natural logarithm scale, estimate LD50 with 90% confidence interval based on the three models.
+```{r 1-LD50}
+inverse_analysis = function(model, p = 0.5, a = 0.1){
+  link = model$family$link
+  # calculate link 
+  if(link == 'logit')
+    k = log(p/(1-p))
+  else if(link == 'probit')
+    k = qnorm(p)
+  else if(link == 'cloglog')
+    k = log(-log(1-p))
+  else
+    errorCondition("Invalid link function")
+  beta0 = model$coefficients[1]
+  beta1 = model$coefficients[2]
+  betacov = vcov(model) # inverse fisher information
+  est = (k - beta0) / beta1 # point estimate 
+  varhat = betacov[1, 1] / (beta1^2) +
+           betacov[2, 2] * (beta0 - k)^2 / (beta1^4) +
+           betacov[1, 2] * 2 * (k - beta0) / (beta1^3)
+  se = sqrt(varhat)
+  ci = est+c(qnorm(a/2),-qnorm(a/2))*se # CI 
+  tibble(
+    estimation = est, 
+    lower_ci = ci[1],
+    upper_ci = ci[2]
+  )
+}
+```
+
+```{r 1-b}
+fitting |> 
+  select(name, model) |>
+  mutate(
+    LD50 = map(model, \(x) inverse_analysis(x))
+  ) |>
+  unnest(LD50) |>
+  mutate(
+    estimation = exp(estimation),
+    lower_ci = exp(lower_ci),
+    upper_ci = exp(upper_ci)
+  ) |>
+  select(-model) |> knitr::kable(digits = 4)
+```
+  **Comments:** From the result table, we can see that the logit and probit models have similar estimation ans confidence interval. The result of cloglog model is a bit of larger than that of other 2 models.
+  
+2. The table below contains the enrollment data of some MPH program in a year
+    - Amount: one-time two-year scholarship
+  
+    - Offer: the number of offers made with the corresponding scholarship
+  
+    - Enrolls: the number of offer accepted
+```{r data2}
+amount = seq(10, 90, 5)
+offer = c(4, 6, 10, 12, 39, 36, 22, 14, 10, 12, 8, 9, 3, 1, 5, 2, 1)
+enroll = c(0, 2, 4, 2, 12, 14, 10, 7, 5, 5, 3, 5, 2, 0, 4, 2, 1)
+data2 = tibble(
+  amount, 
+  offer, 
+  enroll,
+  resp = cbind(enroll, offer - enroll)
+)
+data2 |> knitr::kable()
+```
+  Please analyze the data using a logistic regression and answer the following questions:
+
+  (a) How does the model fit the data?
+    
+  In logistic regression model, we assume that the each `amount` group with data as $(Y_i, n_i, X_i)$ have property that $Y_i \sim Bin(n_i, \pi_i)$. When using logit as link function, we have $\log\frac{\pi_i}{1-\pi_i} = \beta_0 + \beta_1X_i$. ($\pi_i$ is the probability of enrollment activity in $i$-th group)
+
+    
+```{r 2-fit-infer}
+logit_model = glm(resp ~ amount, family = binomial(link = 'logit'), data = data2)
+infer = inference_analysis(logit_model) 
+infer |> knitr::kable(digits = 4)
+```    
+```{r 2-plot}
+data2 |> 
+  ggplot(aes(x = amount)) +
+  geom_point(aes(y = enroll/offer)) +
+  geom_line(aes(y = predict(logit_model, type = "response"), color = 'tomato')) + 
+  theme_bw() + 
+  labs(
+    title = "Enroll Rate - Scholarship Amount",
+    x = "Scholarship amount", 
+    y = "Enroll rate"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  ) 
+```
+  After regression fitting, we have formula that $\log \frac{\pi_i}{1-\pi_i}$ = `r coef(logit_model)[1]` + `r coef(logit_model)[2]` $* amount$. 
+    
+  (b) How do you interpret the relationship between the scholarship amount and enrollment rate? What is 95% CI?
+  
+  **Interception: ** the log odds ratio of enrollment rate have linear relationship with scholarship amount. One unit of scholarship amount change will lead to `r coef(logit_model)[2]` unit change of log odds ratio of enrollment rate. The 95% CI of this coefficient is (`r infer |> pull(lower_ci)`, `r infer |> pull(upper_ci)`) 
+    
+  (c) How much scholarship should we provide to get 40% yield rate (the percentage of admitted students who enroll?) What is the 95% CI?
+```{r}
+result = inverse_analysis(logit_model, p = 0.4, a = 0.05) 
+result |> knitr::kable(digits = 4)
+```
+  By previous logistic regression model with logit link function, we could infer that we need `r result |> pull(estimation)` amount of scholarship to achieve 40% enrollment rate, while the 95% CI of this amount is (`r result |> pull(lower_ci)`, `r result |> pull(upper_ci)`).
+

@@ -1,0 +1,133 @@
+---
+title: "P8131_HW3"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r lib-import, message=FALSE, include=FALSE}
+library(tidyverse)
+```
+
+## Problem 1
+```{r data1}
+case = c(0, 5, 21, 34, 36, 8, 1, 4, 25, 42, 19, 5)
+control = c(106, 164, 138, 139, 88, 31, 9, 26, 29, 27, 18, 0)
+data1 = tibble(
+  age = rep(c(25, 35, 45, 55, 65, 75), 2),
+  alcohol = c(rep("0-79 g", 6), rep("80+ g", 6)) |> factor(),
+  resp = cbind(case, control)
+)
+```
+(a)
+```{r 1a}
+model_a = glm(resp ~ age + alcohol, family = binomial(link = 'logit'), data = data1)
+coef1 = summary(model_a)$coefficient
+
+model_a |> 
+  broom::tidy() |>
+  knitr::kable(digits = 3)
+```
+**Interpretation:** denoting the probability of case occurring as $\pi$, then we have $\log \frac{\pi}{1-\pi}$ = `r coef1[1]` + `r coef1[2]` * age + `r coef1[3]` * alcohol_consumption. One unit change of age will lead to `r coef1[2]` units change of log odds ratio, while the people consuming alcohol >80g will have `r coef1[3]` units log odds ratio to become a patient.
+
+
+(b) Denote the probability of esophageal cancer as $\pi$, then
+$$
+M_0: \log \frac{\pi}{1-\pi} = \beta_0 + \beta_1*age
+$$
+
+$$
+M_1: \log \frac{\pi}{1-\pi} = \beta_0 + \beta_1*age + \beta_2*alcohol
+$$
+
+```{r 1b}
+m0 = glm(resp ~ age, family = binomial(link = 'logit'), data = data1)
+dev0 = sum(residuals(m0,type='deviance')^2)
+dev1 = sum(residuals(model_a,type='deviance')^2)
+n = data1$resp
+pval = 1 - pchisq(dev0 - dev1, 1) 
+```
+After delivering deviance analysis on 2 model, the p-value=`r pval` is less than 0.01, so we have 99% confidence that 2 models are significant different. Therefore, $M_1$ has better performance than $M_0$, $M_1$ is more reasonable.
+
+## Problem 2
+```{r data2}
+bean_75 = c(10, 23, 23, 26, 17)
+cucumber_75 = c(5, 53, 55, 32, 46, 10)
+bean_73 = c(8, 10, 8, 23, 0)
+cucumber_73 = c(3, 22, 15, 32, 3)
+batch_count = c(c(39, 62, 81, 51, 39), 
+                c(6, 74, 72, 51, 79, 13),
+                c(16, 30, 28, 45, 4),
+                c(12, 41, 30, 51, 7))
+data2 = tibble(
+  seed = factor(c(
+    rep("bean", length(bean_75)),
+    rep("cucumber", length(cucumber_75)),
+    rep("bean", length(bean_73)),
+    rep("cucumber", length(cucumber_73))
+  )), 
+  root_extract = factor(c(
+    rep("75", length(bean_75)),
+    rep("75", length(cucumber_75)),
+    rep("73", length(bean_73)),
+    rep("73", length(cucumber_73))
+  )),
+  germination = c(bean_75, cucumber_75, bean_73, cucumber_73),
+  batch = batch_count
+)
+```
+(a)
+```{r 2a}
+model_b = glm(cbind(germination, batch - germination) ~ seed + root_extract, data = data2, family = binomial())
+coef2 = summary(model_b)$coefficient
+model_b |> 
+  broom::tidy() |>
+  knitr::kable(digits = 3)
+```
+**Interception: **Denoting the germination rate as $\pi$, then the model is $\log  \frac{\pi}{1-\pi}$ = `r coef2[1]` + `r coef2[2]` * is_cucumber + `r coef2[3]` * is_75media. The cucumber seeds have `r coef2[2]` units log odds ratio to successfully germinate than bean seed, while seeds cultivated with root extract media O. aegyptiaca 75 have `r coef2[3]` units log odds ratio to successfully germinate than that cultivated with O. aegyptiaca 73.
+
+(b)
+```{r 2b}
+n = dim(data2)[1]
+p = 3
+G.stat = sum(residuals(model_b,type='pearson')^2) # pearson chisq 
+phi = G.stat/(n-p)
+coef3 = summary(model_b, dispersion = phi)$coefficient
+model_b |> summary(dispersion = phi) 
+```
+
+```{r 2b-plot}
+abs_res = abs(residuals(model_b,type='pearson')) |> sort()
+qx = qnorm((n+1:n+0.5)/(2*n+1.125))
+ggplot(aes(x = qx, y = res), data = tibble(
+  qx = qx, res = abs_res
+)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1) + 
+  geom_abline(intercept = 0, slope = sqrt(phi), linetype = 2, color = 'red') +
+  labs(
+    title = 'Half Normal Plot',
+    x = 'Expected Half-Normal Order Stats',
+    y ='Ordered Abs Pearson Residuals'
+  ) + 
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  ) 
+
+```
+From the over-dispersion analysis and plot result, we could find that there indeed exists over-dispersion. The estimation of over-dispersion parameter is `r phi`.
+
+**Interpretation: ** the model corrected with dispersion parameter is $\log \frac{\pi}{1-\pi}$ = `r coef2[1]` + `r coef2[2]` * is_cucumber + `r coef2[3]` * is_75media. The cucumber seeds have `r coef3[3]` units log odds ratio to successfully germinate than bean seed, while seeds cultivated with root extract media O. aegyptiaca 75 have `r coef3[3]` units log odds ratio to successfully germinate than that cultivated with O. aegyptiaca 73.
+
+(c) Plausible cause of over-dispersion:
+
+  1) Intra-class correlation: entire sample doesn't follow binomial distribution.
+
+  2) Hierarchical sampling: each cluster has its own event rate which follows a distribution.
+

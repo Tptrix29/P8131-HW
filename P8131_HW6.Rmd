@@ -1,0 +1,97 @@
+---
+title: "P8131_HW6"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F)
+```
+
+```{r lib-import}
+library(tidyverse)
+library(nlme)
+```
+
+## Problem 1
+From the problem description, we know that \(\text{Cov}(b_i, e_{ij}) = 0, \text{Cov}(e_{ij}, e_{ik}) = 0\) for \(i = 1, \cdots, m; j, k = 1, \cdots, n;j \neq k\).
+
+\(\text{Var}(Y_{ij}) = \text{Var}(b_i) + \text{Var}(e_{ij}) + 2\text{Cov}(b_i, e_{ij}) = \sigma_b^2+\sigma_e^2\)
+
+\(\text{Cov}(Y_{ij}, Y_{ik}) = \text{Cov}(b_i, b_i) + \text{Cov}(b_i, e_{ij}) + \text{Cov}(b_i, e_{ik}) + \text{Cov}(e_{ij}, e_{ik}) = \text{Var}(b_i) = \sigma_b^2\)
+
+\(\text{corr}(Y_{ij}, Y_{ik}) = \displaystyle \frac{\text{Cov}(Y_{ij}, Y_{ik})}{\sqrt{\text{Var}(Y_{ij})\text{Var}(Y_{ik})}} = \frac{\sigma_b^2}{\sigma_b^2 + \sigma_e^2}\)
+
+Because the correlation between any pair of \(Y_{ij}\) and \(Y_{ik}\) is same and the variance of all \(Y_{ij}\) are same, the corresponding covariance pattern is **compound symmetry (exchangeable) **.
+
+
+## Problem 2
+```{r 2-data}
+data = read.table("./data/HW6-dental.txt", header = T) |>
+  janitor::clean_names() |>
+  mutate(gender = gender |> factor())
+```
+### (a)
+```{r spaghetti-plot}
+data |> 
+  ggplot(aes(x = age, y = distance, group = child, color = gender)) +
+  geom_line() +
+  geom_point() +
+  theme_bw() +
+  labs(
+    title = "Distance vs age for different gender"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+### (b) 
+Given $a_i, b_0, b_1, e_{ij}$ are mutually independent, we have: 
+
+\(\text{Var}(Y_{ij}) = \text{Var}(a_i + b_0 \cdot I(sex_i = 0) + b_1 \cdot I(sex_i = 1) + e_{ij}) = \text{Var}(a_i) + \text{Var}(b_k) + \text{Var}(e_{ij}) = \sigma_a^2 + \sigma_b^2 + \sigma_e^2\)
+
+\(\text{Cor}(Y_{ij}, Y_{il}) = \text{Cov}(a_i + b_0 \cdot I(sex_i = 0) + b_1 \cdot I(sex_i = 1) + e_{ij}, a_i + b_0 \cdot I(sex_i = 0) + b_1 \cdot I(sex_i = 1) + e_{il}) = \text{Cov}(a_i, a_i) + \text{Cov}(b_k, b_k) = \sigma_a^2 + \sigma_b^2\)
+
+So, the marginal form of model is: (\(i = 1, \cdots, 27; j,l = 1, \cdots,4; j\neq l\))
+$$
+\mathbb{E}[Y_{ij}] = \beta_0 + \beta_1\cdot age_{ij}
+$$
+$$
+\text{Var}(Y_{ij}) = \sigma_a^2 + \sigma_b^2 + \sigma_e^2
+$$
+$$
+\text{Cor}(Y_{ij}, Y_{il}) = \sigma_a^2 + \sigma_b^2
+$$
+
+### (c)
+```{r exchangeable}
+# Model with compound symmetry covariance
+model_cs <- gls(distance ~ gender + age, data = data, 
+                correlation = corCompSymm(form = ~ 1 | child))
+summary(model_cs)
+corMatrix(model_cs$modelStruct$corStruct)[[1]]
+```
+
+```{r exp}
+# Model with exponential covariance
+model_exp <- gls(distance ~ gender + age, data = data, 
+                correlation = corExp(form = ~ 1 | child))
+summary(model_exp)
+corMatrix(model_exp$modelStruct$corStruct)[[1]]
+```
+
+```{r autoregressive}
+# Model with autoregressive covariance
+model_ar <- gls(distance ~ gender + age, data = data, 
+                correlation = corAR1(form = ~ 1 | child))
+summary(model_ar)
+corMatrix(model_ar$modelStruct$corStruct)[[1]]
+```
+
+**Comparison:**
+
+- coefficient: coefficient estimation of model with exponential covariance is same as that of model with autoregressive covariance. Coefficient estimation of model with compound symmetric covariance is slight different with that of other models.
+
+- covariance: covariance estimation of model with exponential covariance is same as that of model with autoregressive covariance. Covariance estimation of model with compound symmetric covariance has different pattern with that of other models.
+
+The estimation difference between model with compound symmetric covariance and remaining models is caused by the constant covariance assumption. The remaining 2 models have same results because the autoregressive covariance is a specific case of exponential covariance which is generated under condition of equal time interval.

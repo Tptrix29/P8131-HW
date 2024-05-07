@@ -1,0 +1,115 @@
+---
+title: "P8131_HW9"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F)
+```
+
+```{r lib-import}
+library(tidyverse)
+library(KMsurv)
+library(survival)
+```
+
+
+# Problem 1
+\(
+h(x) = \frac{2x}{1+x^2}\\
+H(t) = \int_0^t h(x)dx = \int_0^t \frac{1}{x^2+1}d(x^2+1) = \log (x^2+1) |_0^t = log(t^2+1)\\
+S(t) = \exp\{-H(t)\} = \frac{1}{t^2+1}\\
+f(t) = \frac{dS}{dt} = \frac{2t}{(t^2+1)^2}
+\)
+
+Survival function: \(S(t) = \frac{1}{t^2+1}\)
+Density function: \(f(t) = \frac{2t}{(t^2+1)^2}\)
+
+# Problem 2
+Conditional probability: 
+\(\hat{\lambda}_i = \text{Pr}(T = t_i | T \ge t_i) = \frac{d_i}{n_i}\)
+
+Kaplan-Meier estimator: 
+\(\hat{S}(t) = \prod_{i=1}^k (1-\hat{\lambda}_i)\)
+
+Nelson-Aalen estimator:
+\(\tilde{H}(t) = 
+\begin{cases} 
+0, & 0 \leq t < t_1 \\
+\sum\limits_{t_i \leq t} \frac{d_i}{n_i}, & t \geq t_1 
+\end{cases}
+\)
+
+Fleming-Harrington estimator: 
+\(
+\tilde{S}(t) = \exp\{-\tilde{H}(t)\}\)
+\)
+
+```{r data}
+surv_table = tibble(
+  time = c(1, 2, 4, 5, 6, 7, 8, 9, 10),
+  n = c(10, 9, 7, 6, 5, 4, 3, 2, 1),
+  d = c(1, 2, 0, 0, 1, 0, 0, 0, 0),
+  c = c(0, 0, 1, 1, 0, 1, 1, 1, 1)
+) |>
+  mutate(
+    lambda = d / n, 
+    km_surv = cumprod(1-lambda),
+    hazard = cumsum(lambda), 
+    fh_surv = exp(-hazard)
+  )
+surv_table |> knitr::kable(digits = 2)
+```
+
+`lambda`: The hazard rate at each time point. This represents the rate at which the event is happening at each time point among the subjects at risk.
+
+`km_surv`: The Kaplan-Meier estimate of the survival function at each time point. This gives the probability of surviving past a certain time point, given that the subject has survived up to that time point.
+
+`hazard`: The cumulative hazard function, which estimated by Nelson-Aalen method.
+
+`fh_surv`: This could represent the Fleming-Harrington survival estimate, which is another method to estimate the survival function, potentially giving more weight to events happening at different times.
+
+
+# Problem 3
+
+```{r surv}
+data(tongue)
+tongue = tongue |>
+  mutate(censor = delta)
+
+# aneuploid
+fit_aneuploid = survfit(Surv(time, censor) ~ 1, data = subset(tongue, type == 1), conf.type='log')
+summary(fit_aneuploid)
+
+plot(fit_aneuploid, conf.int = T, mark.time = T, 
+     xlab="Weeks", ylab="Survival Probability", 
+     main="Aneuploid K-M curve", cex.lab=1.5, cex.main=1.5)
+
+# obtain survival rate at given time, with CI
+summary(fit_aneuploid, time = c(52))
+
+# diploid
+fit_diploid = survfit(Surv(time, censor) ~ 1, data = subset(tongue, type == 2), conf.type='log')
+summary(fit_diploid)
+
+plot(fit_diploid, conf.int = T, mark.time = T, 
+     xlab="Weeks", ylab="Survival Probability", 
+     main="Diploid K-M curve", cex.lab=1.5, cex.main=1.5)
+
+# obtain survival rate at given time, with CI
+summary(fit_diploid, time = c(52))
+```
+KM Curve: 
+On the y-axis, we have the survival probability, which is the chance that a subject in the study will survive past a certain time. The x-axis indicates time in weeks. The curve steps down at points where events (such as death or failure) occurred. Each step downward indicates a decrease in the survival probability due to an event.
+
+The vertical marks represent censored observations, indicating participants who were lost to follow-up or for whom the event of interest has not occurred by the end of the study period.
+
+The dashed lines around the solid survival curve denote the 95% confidence interval, suggesting the range within which the true survival curve is likely to lie.
+
+Comments: 
+
+- The estimated 1-year survival probability of aneuploid is 0.654, and its 95% CI is (0.537, 0.797).
+
+- The estimated 1-year survival probability of diploid is 0.486, and its 95% CI is (0.33, 0.716).

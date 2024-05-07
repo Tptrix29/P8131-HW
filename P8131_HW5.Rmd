@@ -1,0 +1,139 @@
+---
+title: "P8131_HW5"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F)
+```
+
+```{r lib-import, message=FALSE, include=FALSE}
+library(tidyverse)
+library(pscl)
+```
+
+## Problem 1
+```{r data1}
+data1 = read_table("./data/HW5-crab.txt") |>
+  janitor::clean_names()
+```
+(a)
+```{r model1-1}
+m1 = glm(sa ~ w, family = poisson, data = data1)
+summary(m1)
+```
+```{r inference1-1}
+coef1 = coef(m1)
+G1 = sum(residuals(m1, type = "pearson")^2)
+df1 = m1$df.residual
+pval = 1 - pchisq(G1, df1)
+pval
+```
+**Interpretation: ** Denote the count of satellites as $Y$, and $Y\sim Pois(\lambda)$, so the fitted model is \(\log \lambda = \) `r coef1[1]` + `r coef1[2]` * w. The log count of satellites will increase `r coef1[2]` when w increases by 1 unit, holding other factors constant.
+
+
+(b)
+```{r model1-2}
+m2 = glm(sa ~ w + wt, family = poisson, data = data1)
+df2 = m2$df.residual
+cmp_pval = 1 - pchisq(m1$deviance - m2$deviance, df1 - df2)
+```
+**Interpretation: ** With the deviance analysis, we could find that p-value is `r cmp_pval` < 0.05, so we should reject the null hypothesis and choose the larger model (M2). 
+
+(c)
+```{r over-dispersion}
+resid = residuals(m2, type = "pearson")
+phi = sum(resid^2) / m2$df.residual
+phi
+```
+
+```{r half-normal-plot}
+n = length(resid)
+data1 |> 
+  ggplot(aes(x = qnorm((n + 1:n + 0.5) / (2 * n + 1.125)))) +
+  geom_point(aes(y = sort(abs(resid)))) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_abline(slope = sqrt(phi), intercept = 0, lty = 2) + 
+  theme_bw() + 
+  labs(
+    title = "Half-Normal Plot",
+    x = "Expected Half-Normal Order Stats", 
+    y = "Ordered Abs Pearson Residuals"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "none"
+  ) 
+```
+
+
+```{r overdispersion-adjust}
+result = summary(m2, dispersion = phi)
+coef2 = coef(result)
+result
+```
+**Interpretation: **From the fitting result with over-dispersion adjustment, we could find that \(\log \lambda = \) `r coef2[1, 1]` + `r coef2[2, 1]` * w + `r coef2[3, 1]` * wt. The log count of satellites will increase `r coef2[2, 1]` when w increases by 1 unit, and that will increase `r coef2[3, 1]` when wt increase by 1 unit, holding other factors constant.
+
+## Problem 2
+```{r data2}
+data2 = read.table("./data/HW5-parasite.txt", header = T) |>
+  janitor::clean_names() |>
+  mutate(year = factor(year),
+         area = factor(area))
+```
+
+(a)
+```{r model2}
+model = glm(intensity ~ area + year + length, family = poisson, data = data2)
+coef3 = coef(model)
+summary(model)
+```
+**Interpretation: **Denote the count of parasites as $Y$, then $Y \sim Pois(\lambda)$. From the model fitting result, we could conclude that the log count of parasites will increase `r coef3[2]` when area is 2, `r coef3[3]` when area is 3 and `r coef3[4]` when area is 4 (reference category with area as 1), holding other factors constant. 
+
+Meanwhile, the log count of parasites will increase `r coef3[5]` when the year is 2000, `r coef3[6]` when the year is 2001 (reference category with year as 1999), holding other factors constant. 
+
+And the log count of parasites will increase `r coef3[7]` when length increase by 1 unit, holding other factors constant.
+
+
+(b)
+```{r goodness}
+resid = residuals(model, type = "pearson")
+G = sum(resid ^ 2)
+pval = 1 - pchisq(G, df = model$df.residual)
+```
+The Pearson statistics of model is `r G`, and the p-value is `r pval` < 0.05, so we could conclude that fitting result is not good.
+
+(c)
+```{r}
+inflated_model = zeroinfl(intensity ~ area + year + length | area + year + length, data = data2)
+coef4 = coef(inflated_model)
+summary(inflated_model)
+```
+**Interpretation: ** 
+
+1. Poisson Model:
+
+The log count of parasites is expected to increase by `r coef4[2]` for Area 2 compared to the baseline Area 1, holding other factors constant.
+The log count of parasites is expected to increase by `r coef4[3]` for Area 3 compared to the baseline Area 1, holding other factors constant.
+The log count of parasites is expected to increase by `r coef4[4]` for Area 4 compared to the baseline Area 1, holding other factors constant.
+
+The log count of parasites is expected to increase by `r coef4[5]` in the year 2000 compared to the baseline year of 1999, holding other factors constant.
+The log count of parasites is expected to increase by `r coef4[6]` in the year 2001 compared to the baseline year of 1999, holding other factors constant.
+
+The log count of parasites is expected to decrease by `r coef4[7]` for each one-unit increase in fish length, holding other factors constant. 
+
+2. Binomial Model: 
+
+The log odds of having zero parasites for Area 2 compared to Area 1 is `r coef4[9]`, holding other factors constant.
+The log odds of having zero parasites for Area 3 compared to Area 1 is `r coef4[10]`, holding other factors constant.
+The log odds of having zero parasites for Area 4 compared to Area 1 is `r coef4[11]`, holding other factors constant.
+
+The log odds of having zero parasites for the year 2000 compared to 1999 is `r coef4[12]`, holding other factors constant.
+The log odds of having zero parasites for the year 2001 compared to 1999 is `r coef4[13]`, holding other factors constant.
+
+The log odds of having zero parasites will increase `r coef4[14]` when length increase by 1 unit, holding other factors constant.
+
+

@@ -1,0 +1,106 @@
+---
+title: "P8131_HW8"
+author: "Pei Tian, pt2632"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F)
+```
+
+```{r lib-import}
+library(tidyverse)
+library(gee)
+library(lme4)
+```
+
+```{r load-data}
+data = readxl::read_excel("./data/HW8-HEALTH.xlsx") |>
+  janitor::clean_names() |> 
+  mutate(id = factor(id), 
+         txt = factor(txt), 
+         health = factor(health), 
+         agegroup = factor(agegroup))
+```
+### (a)
+```{r contingency}
+init_data = subset(data, time == 1)
+contingency_table = table(init_data$txt, init_data$health)
+chisq_test = chisq.test(contingency_table)
+chisq_test
+```
+Because p-value (`r chisq_test$p.value`) is greater than 0.05, it suggests no statistically significant association between group assignment and health self-rating at the time of randomization. 
+
+
+### (b)
+```{r gee}
+post_data = subset(data, time != 1) |>
+  left_join(init_data |> select(id, health), by = "id") |>
+  mutate(health = health.x, 
+         baseline = relevel(factor(health.y), ref = "Poor"),
+         month = case_when(
+           time == 1 ~ 0,
+           time == 2 ~ 3,
+           time == 3 ~ 6,
+           time == 4 ~ 12
+         ),
+         nstat = as.numeric(health == "Good")) |>
+  select(-c(health.x, health.y))
+model1 = gee(nstat ~ baseline + txt + month + agegroup,
+             id = id,
+             data = post_data,
+             family = binomial("logit"),
+             corstr = "unstructured")
+summary(model1)
+```
+**Interpretation: **
+
+The intercept is -1.68960132, which represents the log odds of the outcome for the reference category of all predictors (which are typically the baseline levels) when all other predictors are held at zero. 
+
+The coefficient for `baselinePoor` is 1.81418056. In terms of log odds, this means that the log odds of having 'Good' health at follow-up is 1.81418056 higher for participants who were in the 'Good' health category at baseline compared to those who were not, holding all else constant. 
+
+The coefficient for `txtIntervention` is 2.10225898. This means that the log odds of reporting 'Good' health for the intervention group is 2.10225898 higher than for the control group, holding all else constant. 
+
+The coefficient for `month` is 0.03243343. This is the log odds change when month increase one unit while holding all else constant.
+
+The log odds of reporting 'Good' health for the 25-34 age group are 1.35250468 higher than for the reference age group, holding all else constant. 
+
+The log odds of reporting 'Good' health for the 35+ age group are 1.42052166 higher than for the reference age group, holding all else constant. 
+
+The scale parameter estimated is 1.53423. This is an overdispersion parameter that is larger than 1, indicating that there is more variability in the outcome than would be expected by the binomial distribution alone.
+
+The working correlation matrix in the output represents the estimated correlations between pairs of responses within the same id.
+
+
+### (c)
+```{r glmer}
+model2 = glmer(nstat ~ baseline + txt + month + agegroup + (1 | id), 
+               family = 'binomial', data = post_data, nAGQ = 0)
+summary(model2)
+```
+**Interpretation: **
+
+*Random Effect:*
+
+There's a random intercept for id, with a variance of 3.457 and a standard deviation of 1.859. This suggests substantial variability in the log odds of 'Good' health status between individuals that is not explained by the fixed effects in the model.
+
+*Fixed Effect:*
+
+The intercept has an estimate of -1.72595, it suggests that for a person with average random effects and all other categorical variables at their reference levels while other numeric variables equals to 0, the log odds of reporting 'Good' health is -1.72595. 
+
+With an estimate of 1.85226, the log odds of reporting 'Good' health for someone who was in 'Good' health at baseline is increased by 1.85226 compared to someone in 'Poor' health at baseline, holding all else constant. 
+
+The estimate of 2.25457 for the `txtIntervention` indicates that the log odds of reporting 'Good' health for someone in the intervention group is 2.25457 higher than for someone in the control group, holding all else constant.
+
+The log odds of reporting 'Good' health is increased by 0.02989 when there is one unit increase of month, holding all else constant.
+
+The estimate of 1.47056 for the age group 25-34 suggests that the log odds of reporting 'Good' health are 1.47056 higher than for the reference age group, holding all else constant.
+
+The estimate of 1.30373 for the age group 35+ suggests that the log odds of reporting 'Good' health are 1.30373 higher than for the reference age group, holding all else constant. 
+
+**Difference: **
+
+GEE and GLMM are both used for the longitudinal data. The main difference in interpretation comes from how they handle the within-subject correlation. GEE models use a "working correlation structure" and provide "population-averaged" effects, while GLMMs incorporate random effects to account for correlations and provide "subject-specific" effects.
+
+The coefficients from a GEE model describe the average change in the log odds of the outcome associated with a unit change in the predictor for an average individual in the population. In contrast, the coefficients from a GLMM describe the change in the log odds of the outcome associated with a unit change in the predictor for a specific individual, taking into account the random effects.
